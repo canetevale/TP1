@@ -4,12 +4,15 @@ import unicodedata
 import numpy as np
 import pandas as pd
 import zipfile
+import gc
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.corpus import stopwords
 import pandas as pd
 CHUNKSIZE = 2000  # Ajusta según el tamaño del dataset y el uso de memoria
 
+# Descargar las listas de stopwords de NLTK
+nltk.download('stopwords')
 
 # Importaciones y definiciones
 
@@ -44,6 +47,7 @@ credits_df = pd.concat(credits_chunks, ignore_index=True)  # Unimos todos los ch
 # Verificar los datos cargados
 print(movies_df.head())
 print(credits_df.head())
+gc.collect()
 
 # Nos asegúramos de que ambas columnas 'id' sean del mismo tipo ver [DD]('doc/Diccionario de Datos - PIMLOps.xlsx')
 #movies_df['id'] = movies_df['id'].astype(str)
@@ -66,6 +70,7 @@ with zipfile.ZipFile(credits_zip_path, 'r') as credits_zip:
             credits_chunks.append(chunk)
 
 credits_df = pd.concat(credits_chunks, ignore_index=True)
+gc.collect()
 
 
 # Fusionar en chunks
@@ -76,12 +81,14 @@ for movies_chunk in movies_chunks:
         df_chunks.append(merged_chunk)
 
 df = pd.concat(df_chunks, ignore_index=True)  # Unimos los chunks fusionados
+gc.collect()
 
 # Unir los datasets usando la columna 'id' como clave
 #df = pd.merge(movies_df, credits_df, on='id', how='inner')
 
 # Muestra las primeras filas del nuevo dataframe
 print(df.head())
+gc.collect()
 
 # Transformaciones
 # %% [markdown]
@@ -156,11 +163,17 @@ df['return'] = np.where((df['revenue'] == 0) & (df['budget'] == 0), 0, df['retur
 # Eliminar las columnas que no serán utilizadas, video,imdb_id,adult,original_title,poster_path y homepage.
 
 # %%
-columnas_a_remover = ['video', 'imdb_id', 'adult', 'original_title', 'poster_path', 'homepage']
+# Con estas columnas consume 780MB, sobrepasa los recursos de Render.com
+#columnas_a_remover = ['video', 'imdb_id', 'adult', 'original_title', 'poster_path', 'homepage']
+# Se reduce a lo minimo posible
+columnas_a_remover = ['video', 'imdb_id', 'adult', 'original_title', 'poster_path', 'homepage', 'genres', 'original_language', 'overview', 'production_companies', 'production_countries', 'spoken_languages', 'status', 'tagline', 'runtime' ]
+
 df = df.drop(columns=columnas_a_remover, errors='ignore')
+gc.collect()
 
 # %%
 df.info()
+gc.collect()
 
 def quitar_acentos(cadena: str) -> str:
     """
@@ -170,8 +183,6 @@ def quitar_acentos(cadena: str) -> str:
         char for char in unicodedata.normalize('NFD', cadena)
         if unicodedata.category(char) != 'Mn'
     ).lower()
-
-
 
 # %%
 # Asegurarse de que la columna 'release_date' existe en el DataFrame
@@ -295,9 +306,6 @@ def obtener_info_director(nombre_director: str):
         return {"mensaje": f"No se encontró al director con el nombre '{nombre_director}'."}
 
 def obtener_recomendacion(titulo: str):
-    # Descargar las listas de stopwords de NLTK
-    nltk.download('stopwords')
-
     # Obtener listas predefinidas
     stopwords_english = stopwords.words('english')
     stopwords_spanish = stopwords.words('spanish')

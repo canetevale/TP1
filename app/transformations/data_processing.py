@@ -8,7 +8,7 @@ import gc
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.corpus import stopwords
-import pandas as pd
+from typing import List, Dict, Any
 CHUNKSIZE = 2000  # Ajusta según el tamaño del dataset y el uso de memoria
 
 # Descargar las listas de stopwords de NLTK
@@ -59,18 +59,18 @@ gc.collect()
 print(movies_df.head())
 
 # Definir las claves a eliminar
-cast_keys_to_remove = ['character', 'gender', 'order', 'profile_path']
-crew_keys_to_remove = ['gender', 'profile_path', 'department']
+#cast_keys_to_remove = ['character', 'gender', 'order', 'profile_path']
+#crew_keys_to_remove = ['gender', 'profile_path']
 
 # Función para limpiar listas de diccionarios
-def limpiar_lista_diccionarios(lista, keys_to_remove):
-    if isinstance(lista, list):
-        return [{k: v for k, v in dic.items() if k not in keys_to_remove} for dic in lista]
-    return lista  # Si no es una lista, devolver el valor original
+#def limpiar_lista_diccionarios(lista, keys_to_remove):
+#    if isinstance(lista, list):
+#        return [{k: v for k, v in dic.items() if k not in keys_to_remove} for dic in lista]
+#    return lista  # Si no es una lista, devolver el valor original
 
 # Aplicar la función a las columnas `cast` y `crew`
-credits_df['cast'] = credits_df['cast'].apply(lambda x: limpiar_lista_diccionarios(x, cast_keys_to_remove))
-credits_df['crew'] = credits_df['crew'].apply(lambda x: limpiar_lista_diccionarios(x, crew_keys_to_remove))
+#credits_df['cast'] = credits_df['cast'].apply(lambda x: limpiar_lista_diccionarios(x, cast_keys_to_remove))
+#credits_df['crew'] = credits_df['crew'].apply(lambda x: limpiar_lista_diccionarios(x, crew_keys_to_remove))
 gc.collect()
 
 # Fusionar en chunks
@@ -81,6 +81,7 @@ for movies_chunk in movies_chunks:
         df_chunks.append(merged_chunk)
 
 df = pd.concat(df_chunks, ignore_index=True)  # Unimos los chunks fusionados
+
 gc.collect()
 del movies_df
 del credits_df
@@ -94,29 +95,12 @@ print(df.head())
 gc.collect()
 
 # Transformaciones
-# Algunos campos, como belongs_to_collection, production_companies y otros [DD]('doc/Diccionario de Datos - PIMLOps.xlsx') están anidados, esto es o bien tienen un diccionario o una lista como valores en cada fila, ¡deberán desanidarlos para poder y unirlos al dataset de nuevo hacer alguna de las consultas de la API! O bien buscar la manera de acceder a esos datos sin desanidarlos.
-# Función para desanidar un campo JSON
-# Pendiente de aplicación
-def desanidar_json(valor):
-    try:
-        return json.loads(valor)
-    except (TypeError, ValueError):
-        return {} # O [] si esperas listas
-
-# Desanidar los campos relevantes (reemplaza 'campo1', 'campo2', etc.)
-campos_anidados = ['belongs_to_collection', 'production_companies', 'genres', 'production_countries', 'spoken_languages']
-for campo in campos_anidados:
-    df[campo] = df[campo].apply(desanidar_json)
-
-# Ejemplo de cómo acceder a datos desanidados:
-#df['production_companies'][0][0]['name']  # Accede al nombre de la primera compañía de producción de la primera película
 
 # Los valores nulos de los campos revenue, budget deben ser rellenados por el número 0.
 # Rellenar los valores nulos de las columnas 'revenue' y 'budget' con 0
 df['revenue'] = df['revenue'].fillna(0)
 df['budget'] = df['budget'].fillna(0)
 gc.collect()
-print("Hola")
 print(df.head())
 
 # Los valores nulos del campo release date deben eliminarse.
@@ -265,32 +249,52 @@ def obtener_info_actor(nombre_actor: str):
     else:
         return {"mensaje": f"No se encontró al actor con el nombre '{nombre_actor}' en las filmaciones."}
 
+def extraer_directores(crew_list):
+    # Verificar que 'crew_list' sea una lista válida
+    if not isinstance(crew_list, list):
+        return []  # Retornar lista vacía si no es lista
+
+    # Filtrar por 'job' == 'Director' o 'department' == 'Directing'
+    directores = [
+        d.get('name', '').lower()
+        for d in crew_list
+        if isinstance(d, dict) and (d.get('job') == 'Director' or d.get('department') == 'Directing')
+    ]
+    return directores
+
 def obtener_info_director(nombre_director: str):
-    # Filtrar películas donde el crew contiene un diccionario con el 'job' == 'Director' y el nombre coincide
-    peliculas_director = df[df['crew'].apply(lambda x: any(d.get('job') == 'Director' and d.get('name', '').lower() == nombre_director.lower() for d in (x if isinstance(x, list) else [])))]
+    nombre_director_lower = nombre_director.lower()
+    
+    # Filtrar películas con el director especificado
+    peliculas_director = df[df['crew'].apply(
+        lambda x: nombre_director_lower in extraer_directores(x)
+    )]
     
     if not peliculas_director.empty:
-        retorno_total = peliculas_director.apply(lambda row: row['revenue'] - row['budget'] if pd.notna(row['revenue']) and pd.notna(row['budget']) else np.nan, axis=1).dropna().sum()
+        retorno_total = peliculas_director.apply(
+            lambda row: row['revenue'] - row['budget'] if pd.notna(row['revenue']) and pd.notna(row['budget']) else np.nan, axis=1
+        ).dropna().sum()
         peliculas_info = []
         
         for _, pelicula in peliculas_director.iterrows():
-            retorno_individual = pelicula['revenue'] - pelicula['budget'] if pd.notna(pelicula['revenue']) and pd.notna(pelicula['budget']) else None
+            retorno_individual = pelicula['revenue'] - pelicula['budget'] if pd.notna(pelicula['revenue']) else None
             ganancia = pelicula['revenue'] if pd.notna(pelicula['revenue']) else None
             costo = pelicula['budget'] if pd.notna(pelicula['budget']) else None
-            fecha_lanzamiento = pelicula['release_date'].isoformat() if pd.notna(pelicula['release_date']) else None
+            fecha_lanzamiento = pelicula['release_date'] if pd.notna(pelicula['release_date']) else None
             
             peliculas_info.append({
                 "titulo": pelicula['title'],
+                "director": nombre_director,
                 "fecha_lanzamiento": fecha_lanzamiento,
                 "retorno_individual": retorno_individual,
                 "costo": costo,
-                "ganancia": ganancia
+                "ganancia": ganancia,
             })
         
         return {
-            "nombre_director": nombre_director,
+            "nombre_director_buscado": nombre_director,
             "retorno_total": retorno_total,
-            "peliculas": peliculas_info
+            "peliculas": peliculas_info,
         }
     else:
         return {"mensaje": f"No se encontró al director con el nombre '{nombre_director}'."}
@@ -324,28 +328,6 @@ def obtener_recomendacion(titulo: str):
         # Obtener los índices de las 5 películas más similares
         top_indices = [i[0] for i in sim_scores[1:6]]
         # Retornar los títulos de las películas más similares
-        return df.iloc[top_indices]['title'].tolist()
-    except IndexError:
-        return "Título no encontrado en el dataset. Por favor, verifica el nombre e intenta nuevamente."
-
-def obtener_peliculas_similares(titulo: str, top_n: int = 5):
-
-    stopwords_english = stopwords.words('english')
-    stopwords_spanish = stopwords.words('spanish')
-    stopwords_french = stopwords.words('french')
-    stopwords_german = stopwords.words('german')
-    stopwords_portuguese = stopwords.words('portuguese')
-    combined_stopwords = set(stopwords_english + stopwords_spanish + stopwords_french + stopwords_german + stopwords_portuguese)
-
-    tfidf = TfidfVectorizer(stop_words=combined_stopwords)
-    tfidf_matrix = tfidf.fit_transform(df['title'].fillna(''))
-    cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
-
-    try:
-        idx = df[df['title'].str.lower() == titulo.lower()].index[0]
-        sim_scores = list(enumerate(cosine_sim[idx]))
-        sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-        top_indices = [i[0] for i in sim_scores[1:top_n+1]]
         return df.iloc[top_indices]['title'].tolist()
     except IndexError:
         return "Título no encontrado en el dataset. Por favor, verifica el nombre e intenta nuevamente."

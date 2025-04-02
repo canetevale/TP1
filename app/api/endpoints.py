@@ -79,11 +79,3 @@ async def recomendacion(titulo: str):
     Obtiene recomendaciones de películas similares basado en el título ingresado.
     """
     return obtener_recomendacion(titulo)
-
-@router.get("/recomendaciones", response_model=List[str])
-async def recomendar_peliculas(titulo: str = Query(..., description="Título de la película para obtener recomendaciones")):
-    """
-    Obtiene recomendaciones de películas similares basado en el título ingresado.
-    """
-    recomendaciones = await obtener_peliculas_similares(titulo)
-    return recomendaciones

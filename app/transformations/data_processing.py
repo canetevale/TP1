@@ -8,6 +8,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.corpus import stopwords
 import pandas as pd
+CHUNKSIZE = 2000  # Ajusta según el tamaño del dataset y el uso de memoria
+
 
 # Importaciones y definiciones
 
@@ -21,26 +23,62 @@ import pandas as pd
 movies_zip_path = 'data/movies_dataset.zip'
 credits_zip_path = 'data/credits.zip'
 
-# Leer el archivo movies_dataset.csv desde el .zip
+# Leer el archivo movies_dataset.csv desde el .zip en chunks
+movies_chunks = []
 with zipfile.ZipFile(movies_zip_path, 'r') as movies_zip:
     with movies_zip.open('movies_dataset.csv') as movies_file:
-        movies_df = pd.read_csv(movies_file, sep=',', encoding='utf-8', low_memory=False)
+        for chunk in pd.read_csv(movies_file, sep=',', encoding='utf-8', low_memory=False, chunksize=CHUNKSIZE):
+            movies_chunks.append(chunk)  # Guardamos cada chunk
 
-# Leer el archivo credits.csv desde el .zip
+movies_df = pd.concat(movies_chunks, ignore_index=True)  # Unimos todos los chunks
+
+# Leer el archivo credits.csv desde el .zip en chunks
+credits_chunks = []
 with zipfile.ZipFile(credits_zip_path, 'r') as credits_zip:
     with credits_zip.open('credits.csv') as credits_file:
-        credits_df = pd.read_csv(credits_file, sep=',', encoding='utf-8', low_memory=False)
+        for chunk in pd.read_csv(credits_file, sep=',', encoding='utf-8', low_memory=False, chunksize=CHUNKSIZE):
+            credits_chunks.append(chunk)
+
+credits_df = pd.concat(credits_chunks, ignore_index=True)  # Unimos todos los chunks
 
 # Verificar los datos cargados
 print(movies_df.head())
 print(credits_df.head())
 
 # Nos asegúramos de que ambas columnas 'id' sean del mismo tipo ver [DD]('doc/Diccionario de Datos - PIMLOps.xlsx')
-movies_df['id'] = movies_df['id'].astype(str)
-credits_df['id'] = credits_df['id'].astype(str)
+#movies_df['id'] = movies_df['id'].astype(str)
+#credits_df['id'] = credits_df['id'].astype(str)
+
+movies_chunks = []
+with zipfile.ZipFile(movies_zip_path, 'r') as movies_zip:
+    with movies_zip.open('movies_dataset.csv') as movies_file:
+        for chunk in pd.read_csv(movies_file, sep=',', encoding='utf-8', low_memory=False, chunksize=CHUNKSIZE):
+            chunk['id'] = chunk['id'].astype(str)  # Convertir dentro del bucle
+            movies_chunks.append(chunk)
+
+movies_df = pd.concat(movies_chunks, ignore_index=True)
+
+credits_chunks = []
+with zipfile.ZipFile(credits_zip_path, 'r') as credits_zip:
+    with credits_zip.open('credits.csv') as credits_file:
+        for chunk in pd.read_csv(credits_file, sep=',', encoding='utf-8', low_memory=False, chunksize=CHUNKSIZE):
+            chunk['id'] = chunk['id'].astype(str)  # Convertir dentro del bucle
+            credits_chunks.append(chunk)
+
+credits_df = pd.concat(credits_chunks, ignore_index=True)
+
+
+# Fusionar en chunks
+df_chunks = []
+for movies_chunk in movies_chunks:
+    for credits_chunk in credits_chunks:
+        merged_chunk = pd.merge(movies_chunk, credits_chunk, on='id', how='inner')
+        df_chunks.append(merged_chunk)
+
+df = pd.concat(df_chunks, ignore_index=True)  # Unimos los chunks fusionados
 
 # Unir los datasets usando la columna 'id' como clave
-df = pd.merge(movies_df, credits_df, on='id', how='inner')
+#df = pd.merge(movies_df, credits_df, on='id', how='inner')
 
 # Muestra las primeras filas del nuevo dataframe
 print(df.head())

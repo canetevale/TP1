@@ -92,7 +92,7 @@ proyecto/
 2. **Iniciar la API**:
    Ejecuta el archivo `main.py` con Uvicorn:
    ```bash
-   uvicorn main:app --reload
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
    
    ## o bien
    

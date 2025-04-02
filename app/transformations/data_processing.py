@@ -15,8 +15,6 @@ CHUNKSIZE = 2000  # Ajusta según el tamaño del dataset y el uso de memoria
 nltk.download('stopwords')
 
 # Importaciones y definiciones
-
-# %% [markdown]
 # Carga de movies_dataset
 # Se usa en local, se reemplaza por ZIP por limitación de GitHub de 50MB
 # movies_df = pd.read_csv('data/movies_dataset.csv', sep=',', encoding='utf-8', low_memory=False)
@@ -25,29 +23,6 @@ nltk.download('stopwords')
 # Ruta de los archivos .zip
 movies_zip_path = 'data/movies_dataset.zip'
 credits_zip_path = 'data/credits.zip'
-
-# Leer el archivo movies_dataset.csv desde el .zip en chunks
-movies_chunks = []
-with zipfile.ZipFile(movies_zip_path, 'r') as movies_zip:
-    with movies_zip.open('movies_dataset.csv') as movies_file:
-        for chunk in pd.read_csv(movies_file, sep=',', encoding='utf-8', low_memory=False, chunksize=CHUNKSIZE):
-            movies_chunks.append(chunk)  # Guardamos cada chunk
-
-movies_df = pd.concat(movies_chunks, ignore_index=True)  # Unimos todos los chunks
-
-# Leer el archivo credits.csv desde el .zip en chunks
-credits_chunks = []
-with zipfile.ZipFile(credits_zip_path, 'r') as credits_zip:
-    with credits_zip.open('credits.csv') as credits_file:
-        for chunk in pd.read_csv(credits_file, sep=',', encoding='utf-8', low_memory=False, chunksize=CHUNKSIZE):
-            credits_chunks.append(chunk)
-
-credits_df = pd.concat(credits_chunks, ignore_index=True)  # Unimos todos los chunks
-
-# Verificar los datos cargados
-print(movies_df.head())
-print(credits_df.head())
-gc.collect()
 
 # Nos asegúramos de que ambas columnas 'id' sean del mismo tipo ver [DD]('doc/Diccionario de Datos - PIMLOps.xlsx')
 #movies_df['id'] = movies_df['id'].astype(str)
@@ -72,6 +47,31 @@ with zipfile.ZipFile(credits_zip_path, 'r') as credits_zip:
 credits_df = pd.concat(credits_chunks, ignore_index=True)
 gc.collect()
 
+# Verificar los datos cargados
+print(movies_df.head())
+print(credits_df.head())
+gc.collect()
+
+columnas_a_eliminar = [ 'production_companies', 'production_countries', 'spoken_languages', 'belongs_to_collection', 'adult', 'genres', 'homepage', 'imdb_id', 'original_language', 'overview', 'poster_path', 'runtime', 'status', 'tagline', 'video' ]
+movies_df = movies_df.drop(columns=columnas_a_eliminar, errors='ignore')
+gc.collect()
+# Verificar que se haya eliminado correctamente
+print(movies_df.head())
+
+# Definir las claves a eliminar
+cast_keys_to_remove = ['character', 'gender', 'order', 'profile_path']
+crew_keys_to_remove = ['gender', 'profile_path', 'department']
+
+# Función para limpiar listas de diccionarios
+def limpiar_lista_diccionarios(lista, keys_to_remove):
+    if isinstance(lista, list):
+        return [{k: v for k, v in dic.items() if k not in keys_to_remove} for dic in lista]
+    return lista  # Si no es una lista, devolver el valor original
+
+# Aplicar la función a las columnas `cast` y `crew`
+credits_df['cast'] = credits_df['cast'].apply(lambda x: limpiar_lista_diccionarios(x, cast_keys_to_remove))
+credits_df['crew'] = credits_df['crew'].apply(lambda x: limpiar_lista_diccionarios(x, crew_keys_to_remove))
+gc.collect()
 
 # Fusionar en chunks
 df_chunks = []
@@ -82,6 +82,9 @@ for movies_chunk in movies_chunks:
 
 df = pd.concat(df_chunks, ignore_index=True)  # Unimos los chunks fusionados
 gc.collect()
+del movies_df
+del credits_df
+gc.collect()
 
 # Unir los datasets usando la columna 'id' como clave
 #df = pd.merge(movies_df, credits_df, on='id', how='inner')
@@ -91,9 +94,7 @@ print(df.head())
 gc.collect()
 
 # Transformaciones
-# %% [markdown]
 # Algunos campos, como belongs_to_collection, production_companies y otros [DD]('doc/Diccionario de Datos - PIMLOps.xlsx') están anidados, esto es o bien tienen un diccionario o una lista como valores en cada fila, ¡deberán desanidarlos para poder y unirlos al dataset de nuevo hacer alguna de las consultas de la API! O bien buscar la manera de acceder a esos datos sin desanidarlos.
-# %%
 # Función para desanidar un campo JSON
 # Pendiente de aplicación
 def desanidar_json(valor):
@@ -110,26 +111,21 @@ for campo in campos_anidados:
 # Ejemplo de cómo acceder a datos desanidados:
 #df['production_companies'][0][0]['name']  # Accede al nombre de la primera compañía de producción de la primera película
 
-# %% [markdown]
 # Los valores nulos de los campos revenue, budget deben ser rellenados por el número 0.
-
-# %%
 # Rellenar los valores nulos de las columnas 'revenue' y 'budget' con 0
 df['revenue'] = df['revenue'].fillna(0)
 df['budget'] = df['budget'].fillna(0)
+gc.collect()
+print("Hola")
+print(df.head())
 
-# %% [markdown]
 # Los valores nulos del campo release date deben eliminarse.
-
-# %%
 # Eliminar las filas donde 'release_date' tenga valores nulos
 df = df.dropna(subset=['release_date'])
 print(df['release_date'].isnull().sum())
+gc.collect()
 
-# %% [markdown]
 # De haber fechas, deberán tener el formato AAAA-mm-dd, además deberán crear la columna release_year donde extraerán el año de la fecha de estreno.
-
-# %%
 #Convertir la columna 'release_date' al formato datetime:
 df['release_date'] = pd.to_datetime(df['release_date'], errors='coerce')
 
@@ -140,10 +136,7 @@ df['release_date'] = df['release_date'].dt.strftime('%Y-%m-%d')
 df['release_date'] = pd.to_datetime(df['release_date'], format='%Y-%m-%d', errors='coerce')
 df['release_year'] = df['release_date'].dt.year
 
-# %% [markdown]
 # Crear la columna con el retorno de inversión, llamada return con los campos revenue y budget, dividiendo estas dos últimas revenue / budget, cuando no hay datos disponibles para calcularlo, deberá tomar el valor 0.
-
-# %%
 # Convertir las columnas 'revenue' y 'budget' a tipo numérico, manejando los valores que no se pueden convertir
 df['revenue'] = pd.to_numeric(df['revenue'], errors='coerce')  # Convertir a float, poner NaN si no es posible
 df['budget'] = pd.to_numeric(df['budget'], errors='coerce')  # Convertir a float, poner NaN si no es posible
@@ -159,20 +152,13 @@ df['return'] = np.where(df['budget'] != 0, df['revenue'] / df['budget'], 0)
 # Asegurarse de que si tanto 'revenue' como 'budget' son 0, el retorno también sea 0
 df['return'] = np.where((df['revenue'] == 0) & (df['budget'] == 0), 0, df['return'])
 
-# %% [markdown]
 # Eliminar las columnas que no serán utilizadas, video,imdb_id,adult,original_title,poster_path y homepage.
-
-# %%
 # Con estas columnas consume 780MB, sobrepasa los recursos de Render.com
 #columnas_a_remover = ['video', 'imdb_id', 'adult', 'original_title', 'poster_path', 'homepage']
 # Se reduce a lo minimo posible
-columnas_a_remover = ['video', 'imdb_id', 'adult', 'original_title', 'poster_path', 'homepage', 'genres', 'original_language', 'overview', 'production_companies', 'production_countries', 'spoken_languages', 'status', 'tagline', 'runtime' ]
+columnas_a_remover = ['video', 'imdb_id', 'adult', 'original_title', 'poster_path', 'homepage', 'genres', 'original_language', 'overview', 'production_companies', 'production_countries', 'spoken_languages', 'status', 'tagline', 'runtime', 'backdrop_path', 'gender', 'character', 'profile_path', 'order']
 
 df = df.drop(columns=columnas_a_remover, errors='ignore')
-gc.collect()
-
-# %%
-df.info()
 gc.collect()
 
 def quitar_acentos(cadena: str) -> str:
@@ -184,7 +170,6 @@ def quitar_acentos(cadena: str) -> str:
         if unicodedata.category(char) != 'Mn'
     ).lower()
 
-# %%
 # Asegurarse de que la columna 'release_date' existe en el DataFrame
 if 'release_date' in df.columns:
     # Convertir la columna 'release_date' a tipo datetime
@@ -281,15 +266,19 @@ def obtener_info_actor(nombre_actor: str):
         return {"mensaje": f"No se encontró al actor con el nombre '{nombre_actor}' en las filmaciones."}
 
 def obtener_info_director(nombre_director: str):
-    peliculas_director = df[df['crew'].apply(lambda x: nombre_director.lower() in str(x).lower() and 'director' in str(x).lower())]
+    # Filtrar películas donde el crew contiene un diccionario con el 'job' == 'Director' y el nombre coincide
+    peliculas_director = df[df['crew'].apply(lambda x: any(d.get('job') == 'Director' and d.get('name', '').lower() == nombre_director.lower() for d in (x if isinstance(x, list) else [])))]
+    
     if not peliculas_director.empty:
         retorno_total = peliculas_director.apply(lambda row: row['revenue'] - row['budget'] if pd.notna(row['revenue']) and pd.notna(row['budget']) else np.nan, axis=1).dropna().sum()
         peliculas_info = []
-        for index, pelicula in peliculas_director.iterrows():
+        
+        for _, pelicula in peliculas_director.iterrows():
             retorno_individual = pelicula['revenue'] - pelicula['budget'] if pd.notna(pelicula['revenue']) and pd.notna(pelicula['budget']) else None
             ganancia = pelicula['revenue'] if pd.notna(pelicula['revenue']) else None
             costo = pelicula['budget'] if pd.notna(pelicula['budget']) else None
             fecha_lanzamiento = pelicula['release_date'].isoformat() if pd.notna(pelicula['release_date']) else None
+            
             peliculas_info.append({
                 "titulo": pelicula['title'],
                 "fecha_lanzamiento": fecha_lanzamiento,
@@ -297,6 +286,7 @@ def obtener_info_director(nombre_director: str):
                 "costo": costo,
                 "ganancia": ganancia
             })
+        
         return {
             "nombre_director": nombre_director,
             "retorno_total": retorno_total,
@@ -339,8 +329,6 @@ def obtener_recomendacion(titulo: str):
         return "Título no encontrado en el dataset. Por favor, verifica el nombre e intenta nuevamente."
 
 def obtener_peliculas_similares(titulo: str, top_n: int = 5):
-    # Descargar las listas de stopwords de NLTK
-    nltk.download('stopwords')
 
     stopwords_english = stopwords.words('english')
     stopwords_spanish = stopwords.words('spanish')
@@ -361,4 +349,3 @@ def obtener_peliculas_similares(titulo: str, top_n: int = 5):
         return df.iloc[top_indices]['title'].tolist()
     except IndexError:
         return "Título no encontrado en el dataset. Por favor, verifica el nombre e intenta nuevamente."
-# %%

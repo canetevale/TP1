@@ -66,10 +66,8 @@ proyecto/
 │   │    └── data_processing.py
 │   └── main.py
 ├── data/
-│   ├── credits.csv
-│   ├── dataset.zip
-│   ├── ejemplo.csv
-│   └── movies_dataset.csv
+│   ├── credits.zip
+│   └── movies_dataset.zip
 ├── doc/
 │   └── Diccionario de Datos - PIMLOps.xlsx
 ├── README.md
